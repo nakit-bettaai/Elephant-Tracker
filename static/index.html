@@ -1,0 +1,1656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>🐘 Elephant Tracker — Forest Watch</title>
+<!-- PWA -->
+<link rel="manifest" href="/static/manifest.json"/>
+<meta name="theme-color" content="#1a6b2e"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="ElephantAI"/>
+<link rel="apple-touch-icon" href="/static/icon-192.png"/>
+<meta name="description" content="Real-time forest elephant detection and alert system with AI, satellite map, LINE and SMS alerts"/>
+<!-- Leaflet.js (local bundle) -->
+<link rel="stylesheet" href="/static/leaflet.css"/>
+<script src="/static/leaflet.js"></script>
+<!-- Chart.js for analytics -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#1b5e20;--green2:#2e7d32;--green3:#e8f5e9;--green4:#a5d6a7;
+  --amber:#f57f17;--red:#c62828;--blue:#1565c0;
+  --dark:#1a2e1a;--gray:#f1f4f1;--border:#cdd8cd;
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray);color:var(--dark);min-height:100vh;display:flex;flex-direction:column}
+
+/* HEADER */
+header{background:linear-gradient(135deg,#1a3a1a,var(--green2));color:white;padding:12px 24px;display:flex;align-items:center;gap:14px;box-shadow:0 3px 12px rgba(0,0,0,0.3);flex-shrink:0}
+.logo{font-size:32px;line-height:1}
+.header-text h1{font-size:18px;font-weight:800}
+.header-text p{font-size:11px;opacity:0.75;margin-top:1px}
+.ws-pill{margin-left:auto;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.25);border-radius:20px;padding:5px 12px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.ws-dot{width:7px;height:7px;border-radius:50%;background:#f44336}
+.ws-dot.connected{background:#4caf50;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+
+/* NAV */
+nav{background:#2e7d32;display:flex;padding:0 16px;overflow-x:auto;flex-shrink:0}
+.nav-tab{padding:10px 16px;color:rgba(255,255,255,0.6);cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;border-bottom:3px solid transparent;transition:all 0.2s;user-select:none}
+.nav-tab:hover{color:white}
+.nav-tab.active{color:white;border-bottom-color:#ffca28}
+
+/* LAYOUT */
+.content{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.pane{display:none;flex-direction:column;gap:16px;padding:16px;overflow-y:auto;flex:1}
+.pane.active{display:flex}
+
+/* MAP PANE — special full-height layout */
+#pane-map{padding:0;flex-direction:row;overflow:hidden}
+#pane-map.active{display:flex}
+#mapContainer{flex:1;position:relative}
+#map{width:100%;height:100%}
+.map-sidebar{width:320px;flex-shrink:0;display:flex;flex-direction:column;background:white;border-left:1px solid var(--border);overflow:hidden}
+.map-sidebar-header{background:var(--green);color:white;padding:10px 14px;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.map-sidebar-body{overflow-y:auto;flex:1}
+.sight-item{display:flex;gap:10px;padding:10px 12px;border-bottom:1px solid #eee;cursor:pointer;transition:background 0.15s}
+.sight-item:hover{background:#f9fdf9}
+.sight-item.border{border-left:3px solid #ff5722}
+.sight-item.new{animation:flashGreen 1.5s ease}
+@keyframes flashGreen{0%{background:#c8e6c9}100%{background:white}}
+.sight-thumb{width:64px;height:48px;object-fit:cover;border-radius:5px;flex-shrink:0}
+.sight-info{flex:1;min-width:0}
+.sight-src{font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sight-time{color:#888;font-size:10px;margin-top:1px}
+.sight-count{font-size:15px;font-weight:800;color:var(--red);margin-top:2px}
+.sight-gps{font-size:10px;color:#888}
+
+/* MAP CONTROLS */
+.map-controls{position:absolute;top:10px;left:10px;z-index:1000;display:flex;flex-direction:column;gap:6px}
+.map-btn{background:white;border:none;border-radius:6px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.2);font-family:inherit;display:flex;align-items:center;gap:5px;transition:box-shadow 0.15s}
+.map-btn:hover{box-shadow:0 3px 10px rgba(0,0,0,0.3)}
+.map-btn.active-layer{background:var(--green);color:white}
+.map-filter{background:white;border-radius:8px;padding:8px 10px;box-shadow:0 2px 6px rgba(0,0,0,0.2);font-size:12px}
+.map-filter label{display:block;font-weight:700;color:#555;margin-bottom:4px;font-size:11px}
+.map-filter select{border:1px solid #ccc;border-radius:5px;padding:4px 6px;font-family:inherit;font-size:12px;width:100%}
+
+/* BORDER ZONE STYLES */
+.zone-card{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:7px;font-size:12px;margin-bottom:8px}
+.zone-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;border:2px solid rgba(0,0,0,0.15)}
+.zone-name{font-weight:700;font-size:13px}
+.zone-village{color:#e65100;font-size:11px;font-weight:600}
+.zone-detail{color:#888;font-size:10px;margin-top:1px}
+.map-btn.draw-active{background:#ff5722;color:white;animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.6}}
+.border-badge{background:#ff5722;color:white;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;margin-left:5px}
+
+/* LIVE ALERT BANNER */
+#alertBanner{position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-80px);background:var(--red);color:white;padding:10px 24px;border-radius:0 0 12px 12px;font-weight:700;font-size:14px;z-index:9999;transition:transform 0.4s;box-shadow:0 4px 16px rgba(0,0,0,0.3);display:flex;align-items:center;gap:8px;white-space:nowrap}
+#alertBanner.show{transform:translateX(-50%) translateY(0)}
+#alertBanner.border{background:#e65100;animation:urgentPulse 0.5s infinite}
+@keyframes urgentPulse{0%,100%{background:#e65100}50%{background:#bf360c}}
+
+/* CARDS */
+.card{background:white;border-radius:10px;box-shadow:0 1px 5px rgba(0,0,0,0.08);overflow:hidden}
+.card-header{background:var(--green3);border-bottom:1px solid var(--border);padding:11px 16px;font-weight:700;font-size:13px;color:var(--green);display:flex;align-items:center;gap:7px;justify-content:space-between}
+.card-body{padding:16px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* STATS */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stat{background:white;border-radius:8px;padding:14px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.07)}
+.stat-num{font-size:28px;font-weight:800;color:var(--green)}
+.stat-num.danger{color:var(--red)}
+.stat-label{font-size:11px;color:#888;margin-top:2px}
+
+/* DROP ZONE */
+.drop-zone{border:2.5px dashed var(--border);border-radius:8px;padding:28px 16px;text-align:center;cursor:pointer;transition:all 0.2s;position:relative;background:#fafcfa}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--green2);background:var(--green3)}
+.drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop-icon{font-size:32px;margin-bottom:8px}
+.drop-text{font-size:13px;color:#666}
+.drop-text strong{color:var(--green2)}
+
+/* RESULT */
+.result-img{width:100%;border-radius:7px;display:block;margin-bottom:10px}
+.det-badge{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:7px;font-weight:700;font-size:14px;margin-bottom:10px}
+.det-badge.found{background:#ffebee;color:var(--red)}
+.det-badge.clear{background:#e8f5e9;color:var(--green)}
+.det-list{list-style:none;font-size:12px}
+.det-list li{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0}
+.conf-bar{height:5px;border-radius:3px;background:#4caf50;display:inline-block;min-width:4px}
+
+/* ALERT HISTORY */
+.alert-list{display:flex;flex-direction:column;gap:8px}
+.alert-card{display:flex;gap:10px;padding:10px;border:1px solid var(--border);border-radius:7px;font-size:12px}
+.alert-card.detected{border-left:4px solid var(--red)}
+.alert-card.clear{border-left:4px solid var(--green2)}
+.alert-thumb{width:72px;height:54px;object-fit:cover;border-radius:5px;flex-shrink:0}
+.alert-info{flex:1;min-width:0}
+.alert-source{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.alert-time{color:#888;font-size:10px;margin-top:1px}
+.alert-count{font-size:14px;font-weight:800;color:var(--red);margin-top:3px}
+.alert-count.clear{color:var(--green2)}
+.alert-gps{font-size:10px;color:#888}
+.empty-state{text-align:center;padding:32px;color:#bbb;font-size:13px}
+
+/* CAMERAS */
+.cam-card{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:7px;font-size:12px}
+.cam-name{font-weight:700;font-size:13px}
+.cam-url{color:#888;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+.cam-gps{color:#2e7d32;font-size:11px;margin-top:2px}
+.cam-status{padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;flex-shrink:0}
+.cam-status.ok{background:#e8f5e9;color:#2e7d32}
+.cam-status.error{background:#ffebee;color:#c62828}
+.cam-status.connecting{background:#fff8e1;color:#f57f17}
+
+/* FORMS */
+.form-row{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.form-row.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.form-row.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
+label{font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.3px}
+input,select,textarea{border:1.5px solid var(--border);border-radius:6px;padding:8px 10px;font-size:13px;font-family:inherit;width:100%;transition:border-color 0.15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green2);box-shadow:0 0 0 3px rgba(46,125,50,0.1)}
+.gps-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end}
+
+/* BUTTONS */
+.btn{border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:opacity 0.15s,transform 0.1s;display:inline-flex;align-items:center;gap:5px}
+.btn:hover{opacity:0.85}
+.btn:active{transform:scale(0.97)}
+.btn-green{background:var(--green2);color:white}
+.btn-red{background:var(--red);color:white}
+.btn-amber{background:var(--amber);color:white}
+.btn-blue{background:var(--blue);color:white}
+.btn-outline{background:white;color:var(--green2);border:2px solid var(--green2)}
+.btn-sm{padding:5px 10px;font-size:11px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+
+/* TOAST */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:#1b5e20;color:white;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,0.25);transition:transform 0.3s;z-index:9998;pointer-events:none}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.error{background:var(--red)}
+
+/* INFO BOX */
+.info-box{background:#e3f2fd;border:1px solid #90caf9;border-radius:7px;padding:10px 12px;font-size:12px;color:#0d47a1;line-height:1.6}
+
+/* POPUP */
+.leaflet-popup-content{width:260px!important;padding:0!important;overflow:hidden;border-radius:8px}
+.popup-img{width:100%;height:140px;object-fit:cover;display:block}
+.popup-body{padding:10px 12px}
+.popup-title{font-weight:800;font-size:14px;color:#c62828}
+.popup-sub{font-size:11px;color:#666;margin-top:3px;line-height:1.5}
+
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:white;border-radius:50%;animation:spin 0.7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── DASHBOARD ──────────────────────────────────────────────── */
+#pane-dashboard{gap:14px}
+.db-kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.kpi{background:white;border-radius:10px;padding:14px 16px;box-shadow:0 1px 5px rgba(0,0,0,0.08);display:flex;flex-direction:column;gap:4px;position:relative;overflow:hidden}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--kpi-color,var(--green2))}
+.kpi-icon{font-size:22px;line-height:1}
+.kpi-val{font-size:30px;font-weight:800;color:var(--dark);line-height:1.1}
+.kpi-label{font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.4px}
+.kpi-sub{font-size:11px;color:#aaa;margin-top:1px}
+.kpi.danger .kpi-val{color:var(--red)}
+.kpi.border-kpi .kpi-val{color:#e65100}
+
+.db-main{display:grid;grid-template-columns:1fr 380px;gap:14px;min-height:0}
+.db-chart-card{background:white;border-radius:10px;box-shadow:0 1px 5px rgba(0,0,0,0.08);display:flex;flex-direction:column;overflow:hidden}
+.db-chart-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.db-chart-title{font-weight:700;font-size:13px;color:var(--green)}
+.db-toggle{display:flex;border:1.5px solid var(--border);border-radius:6px;overflow:hidden}
+.db-toggle button{padding:4px 12px;border:none;background:white;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:#666;transition:all 0.15s}
+.db-toggle button.active{background:var(--green2);color:white}
+.db-chart-body{padding:14px;flex:1;min-height:0;position:relative}
+canvas{max-height:100%}
+
+.db-feed{background:white;border-radius:10px;box-shadow:0 1px 5px rgba(0,0,0,0.08);display:flex;flex-direction:column;overflow:hidden;max-height:420px}
+.db-feed-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.db-feed-title{font-weight:700;font-size:13px;color:var(--green)}
+.feed-live{background:#e8f5e9;color:var(--green2);border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;display:flex;align-items:center;gap:4px}
+.db-feed-list{overflow-y:auto;flex:1}
+.feed-item{display:flex;gap:10px;padding:9px 12px;border-bottom:1px solid #f0f0f0;cursor:pointer;transition:background 0.15s}
+.feed-item:hover{background:#fafafa}
+.feed-item.new-item{animation:feedFlash 1.5s ease}
+@keyframes feedFlash{0%{background:#c8e6c9}100%{background:white}}
+.feed-item.border-item{border-left:3px solid #ff5722}
+.feed-thumb{width:56px;height:42px;object-fit:cover;border-radius:5px;flex-shrink:0}
+.feed-info{flex:1;min-width:0}
+.feed-src{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.feed-time{font-size:10px;color:#999;margin-top:1px}
+.feed-count{font-size:12px;font-weight:800;color:var(--red)}
+.feed-badge{font-size:9px;background:#ff5722;color:white;padding:1px 5px;border-radius:5px;font-weight:700;margin-left:4px}
+
+.db-bottom{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.db-map-card{background:white;border-radius:10px;box-shadow:0 1px 5px rgba(0,0,0,0.08);overflow:hidden}
+.db-map-card .db-chart-header{padding:10px 14px}
+#dbMap{height:260px}
+
+.db-top-sources{background:white;border-radius:10px;box-shadow:0 1px 5px rgba(0,0,0,0.08);overflow:hidden}
+.source-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #f5f5f5;font-size:12px}
+.source-rank{width:18px;height:18px;border-radius:50%;background:var(--green3);color:var(--green2);font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.source-name{flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.source-bar-wrap{width:80px;height:6px;background:#f0f0f0;border-radius:3px;flex-shrink:0}
+.source-bar{height:6px;border-radius:3px;background:var(--green2)}
+.source-count{font-weight:800;color:var(--dark);min-width:28px;text-align:right}
+
+@media(max-width:900px){
+  #pane-map.active{flex-direction:column}
+  .map-sidebar{width:100%;height:220px;border-left:none;border-top:1px solid var(--border)}
+  .stats{grid-template-columns:1fr 1fr}
+  .grid2{grid-template-columns:1fr}
+  .db-kpi-row{grid-template-columns:1fr 1fr}
+  .db-main{grid-template-columns:1fr}
+  .db-bottom{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div id="alertBanner">🐘 ELEPHANT DETECTED! <span id="alertBannerText"></span></div>
+
+<header>
+  <div class="logo">🐘</div>
+  <div class="header-text">
+    <h1>Elephant Tracker</h1>
+    <p>Real-Time Forest Wildlife Detection — ระบบติดตามช้างป่าแบบเรียลไทม์</p>
+  </div>
+  <div class="ws-pill"><span class="ws-dot" id="wsDot"></span><span id="wsStatus">Connecting…</span></div>
+</header>
+
+<nav>
+  <div class="nav-tab" onclick="switchTab('dashboard')">📊 Dashboard</div>
+  <div class="nav-tab" onclick="switchTab('map')">🗺️ Live Map</div>
+  <div class="nav-tab" onclick="switchTab('detect')">🔍 Detect</div>
+  <div class="nav-tab" onclick="switchTab('cameras')">📹 Cameras</div>
+  <div class="nav-tab" onclick="switchTab('history')">📋 History</div>
+  <div class="nav-tab" onclick="switchTab('settings')">⚙️ Settings</div>
+</nav>
+
+<div class="content">
+
+<!-- DASHBOARD TAB -->
+<div class="pane" id="pane-dashboard">
+
+  <!-- KPI Row -->
+  <div class="db-kpi-row">
+    <div class="kpi" style="--kpi-color:#c62828">
+      <div class="kpi-icon">🐘</div>
+      <div class="kpi-val danger" id="kpiToday">—</div>
+      <div class="kpi-label">Detected Today</div>
+      <div class="kpi-sub" id="kpiTodaySub">loading…</div>
+    </div>
+    <div class="kpi" style="--kpi-color:#e65100">
+      <div class="kpi-icon">🚨</div>
+      <div class="kpi-val border-kpi" id="kpiBorder">—</div>
+      <div class="kpi-label">Border Alerts Today</div>
+      <div class="kpi-sub" id="kpiBorderSub">loading…</div>
+    </div>
+    <div class="kpi" style="--kpi-color:#1565c0">
+      <div class="kpi-icon">📅</div>
+      <div class="kpi-val" id="kpiMonth">—</div>
+      <div class="kpi-label">This Month</div>
+      <div class="kpi-sub" id="kpiMonthSub">loading…</div>
+    </div>
+    <div class="kpi" style="--kpi-color:#2e7d32">
+      <div class="kpi-icon">📹</div>
+      <div class="kpi-val" id="kpiCams">—</div>
+      <div class="kpi-label">Active Cameras</div>
+      <div class="kpi-sub" id="kpiCamsSub">loading…</div>
+    </div>
+    <div class="kpi" style="--kpi-color:#6a1b9a">
+      <div class="kpi-icon">🏘️</div>
+      <div class="kpi-val" id="kpiZones">—</div>
+      <div class="kpi-label">Border Zones</div>
+      <div class="kpi-sub" id="kpiZonesSub">loading…</div>
+    </div>
+  </div>
+
+  <!-- Alert Channel Status Bar -->
+  <div id="alertStatusBar" style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:center">
+    <div id="lineStatusCard" style="background:white;border-radius:8px;padding:10px 14px;box-shadow:0 1px 4px rgba(0,0,0,0.07);display:flex;align-items:center;gap:10px">
+      <span style="font-size:20px">📲</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.3px">LINE Notify</div>
+        <div id="lineStatusText" style="font-size:12px;color:#aaa">checking…</div>
+      </div>
+      <span id="lineStatusDot" style="width:10px;height:10px;border-radius:50%;background:#e0e0e0;flex-shrink:0"></span>
+    </div>
+    <div id="smsStatusCard" style="background:white;border-radius:8px;padding:10px 14px;box-shadow:0 1px 4px rgba(0,0,0,0.07);display:flex;align-items:center;gap:10px">
+      <span style="font-size:20px">📱</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.3px">SMS (Twilio)</div>
+        <div id="smsStatusText" style="font-size:12px;color:#aaa">checking…</div>
+      </div>
+      <span id="smsStatusDot" style="width:10px;height:10px;border-radius:50%;background:#e0e0e0;flex-shrink:0"></span>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-blue" id="btnTestLineDash" onclick="testLineDash()" style="white-space:nowrap">📲 Test LINE</button>
+      <button class="btn btn-amber" id="btnTestSmsDash" onclick="testSmsDash()" style="white-space:nowrap">📱 Test SMS</button>
+    </div>
+  </div>
+
+  <!-- Chart + Live Feed -->
+  <div class="db-main">
+    <div class="db-chart-card">
+      <div class="db-chart-header">
+        <span class="db-chart-title">📈 Elephant Detections</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="db-toggle">
+            <button id="btnDaily" class="active" onclick="setChartMode('daily')">Daily</button>
+            <button id="btnMonthly" onclick="setChartMode('monthly')">Monthly</button>
+          </div>
+          <select id="chartDaysFilter" onchange="refreshDashboard()" style="border:1.5px solid var(--border);border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;background:white;color:#555">
+            <option value="30">Last 30 days</option>
+            <option value="60">Last 60 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="365">Last 12 months</option>
+          </select>
+        </div>
+      </div>
+      <div class="db-chart-body" style="height:260px">
+        <canvas id="detectionChart"></canvas>
+      </div>
+    </div>
+
+    <div class="db-feed">
+      <div class="db-feed-header">
+        <span class="db-feed-title">⚡ Live Incident Feed</span>
+        <span class="feed-live"><span class="ws-dot connected" style="width:6px;height:6px"></span> LIVE</span>
+      </div>
+      <div class="db-feed-list" id="dbFeedList">
+        <div class="empty-state" style="padding:24px">No incidents yet.<br>Waiting for detections…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mini Map + Top Sources -->
+  <div class="db-bottom">
+    <div class="db-map-card">
+      <div class="db-chart-header">
+        <span class="db-chart-title">📍 Sighting Locations</span>
+        <span style="font-size:11px;color:#888" id="dbMapSub">last 30 days</span>
+      </div>
+      <div id="dbMap"></div>
+    </div>
+
+    <div class="db-top-sources">
+      <div class="db-chart-header">
+        <span class="db-chart-title">📷 Top Detection Sources</span>
+        <span style="font-size:11px;color:#888" id="sourceCount"></span>
+      </div>
+      <div id="dbSourceList">
+        <div class="empty-state" style="padding:20px">No data yet.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- MAP TAB -->
+<div class="pane" id="pane-map">
+  <div id="mapContainer">
+    <div id="map"></div>
+    <div class="map-controls">
+      <button class="map-btn active-layer" id="btnSatellite" onclick="setLayer('satellite')">🛰️ Satellite</button>
+      <button class="map-btn" id="btnStreet" onclick="setLayer('street')">🗺️ Street</button>
+      <div class="map-filter" style="margin-top:4px">
+        <label>Show last</label>
+        <select onchange="refreshMapSightings(this.value)">
+          <option value="1">1 hour</option>
+          <option value="6">6 hours</option>
+          <option value="24" selected>24 hours</option>
+          <option value="168">7 days</option>
+          <option value="0">All time</option>
+        </select>
+      </div>
+      <button class="map-btn" id="btnDrawZone" onclick="toggleDrawZone()" style="margin-top:4px;border:2px solid #ff5722;color:#ff5722">
+        🏘️ Draw Border Zone
+      </button>
+      <div id="drawHint" style="display:none;background:white;border-radius:6px;padding:7px 10px;font-size:11px;color:#e65100;font-weight:600;box-shadow:0 2px 6px rgba(0,0,0,0.2);max-width:160px">
+        Click map center, then enter zone details
+      </div>
+    </div>
+  </div>
+  <div class="map-sidebar">
+    <div style="display:flex;border-bottom:1px solid #e0e0e0">
+      <div id="sideTab0" style="flex:1;padding:9px 8px;text-align:center;font-size:12px;font-weight:700;cursor:pointer;color:white;background:var(--green)" onclick="switchSideTab(0)">🐘 Sightings</div>
+      <div id="sideTab1" style="flex:1;padding:9px 8px;text-align:center;font-size:12px;font-weight:700;cursor:pointer;color:#555;background:#f5f5f5" onclick="switchSideTab(1)">🏘️ Zones</div>
+    </div>
+    <div class="map-sidebar-body">
+      <!-- Sightings panel -->
+      <div id="sightingPanel">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #eee;font-size:11px;color:#888">
+          <span>Recent sightings</span>
+          <span id="sightingCount" style="background:#e8f5e9;color:var(--green);border-radius:10px;padding:1px 7px;font-weight:700">0</span>
+        </div>
+        <div id="sightingList">
+          <div class="empty-state">No GPS sightings yet.<br>Add cameras with coordinates<br>or use Detect tab with location.</div>
+        </div>
+      </div>
+      <!-- Zones panel -->
+      <div id="zonesPanel" style="display:none">
+        <div style="padding:10px 12px;border-bottom:1px solid #eee">
+          <div style="font-size:11px;font-weight:700;color:#e65100;margin-bottom:8px">🏘️ BORDER ZONES</div>
+          <div style="font-size:11px;color:#888;margin-bottom:8px;line-height:1.5">Define forest-village boundary zones. Elephants detected inside trigger URGENT LINE + SMS alerts to villagers.</div>
+          <button class="btn btn-sm" style="background:#ff5722;color:white;width:100%" onclick="toggleDrawZone()">+ Draw New Zone on Map</button>
+        </div>
+        <div id="zoneList" style="padding:10px 12px">
+          <div class="empty-state" style="padding:20px">No border zones yet.<br>Click "Draw New Zone" above.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DETECT TAB -->
+<div class="pane" id="pane-detect">
+  <div class="stats">
+    <div class="stat"><div class="stat-num danger" id="statAlerts">0</div><div class="stat-label">🐘 Detected Today</div></div>
+    <div class="stat"><div class="stat-num" id="statCams">0</div><div class="stat-label">📹 Active Cameras</div></div>
+    <div class="stat"><div class="stat-num" id="statChecks">0</div><div class="stat-label">🔎 Total Checks</div></div>
+    <div class="stat"><div class="stat-num" id="statGPS">0</div><div class="stat-label">📍 GPS Sightings</div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-header">📤 Upload Image for Detection</div>
+      <div class="card-body">
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="fileInput" accept="image/*" onchange="handleFile(this.files[0])"/>
+          <div class="drop-icon">🖼️</div>
+          <div class="drop-text"><strong>Click or drag & drop</strong><br>JPG, PNG, WEBP — max 20 MB</div>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="form-row">
+            <label>📍 Location Name (optional)</label>
+            <input type="text" id="locName" placeholder="e.g. North Forest Gate, Sector B"/>
+          </div>
+          <div class="gps-row">
+            <div class="form-row" style="margin:0">
+              <label>Latitude</label>
+              <input type="number" id="uploadLat" placeholder="14.0000" step="0.000001"/>
+            </div>
+            <div class="form-row" style="margin:0">
+              <label>Longitude</label>
+              <input type="number" id="uploadLng" placeholder="101.0000" step="0.000001"/>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="getMyLocation()" title="Use device GPS">📍 GPS</button>
+          </div>
+        </div>
+
+        <div id="uploadProgress" style="display:none;margin-top:10px">
+          <div style="background:#f0f0f0;border-radius:4px;height:5px;overflow:hidden">
+            <div id="progressBar" style="height:100%;background:var(--green2);width:0%;transition:width 0.3s"></div>
+          </div>
+          <p style="font-size:11px;color:#888;margin-top:5px;text-align:center">🔍 AI analyzing image…</p>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-green" onclick="document.getElementById('fileInput').click()">📂 Choose Image</button>
+          <button class="btn btn-outline btn-sm" onclick="clearResult()">✕ Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="resultBox" style="display:none">
+      <div class="card-header">🎯 Detection Result</div>
+      <div class="card-body">
+        <img id="resultImg" class="result-img" src="" alt=""/>
+        <div id="resultBadge" class="det-badge"></div>
+        <ul id="detList" class="det-list"></ul>
+        <div id="resultGPS" style="font-size:11px;color:#888;margin-top:6px"></div>
+        <button class="btn btn-blue btn-sm" style="margin-top:8px" onclick="switchTab('map')">🗺️ View on Map</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CAMERAS TAB -->
+<div class="pane" id="pane-cameras">
+  <div class="card">
+    <div class="card-header">➕ Add RTSP Camera with GPS</div>
+    <div class="card-body">
+      <div class="info-box" style="margin-bottom:12px">
+        ℹ️ Enter the camera's GPS coordinates so elephant sightings appear on the map automatically.
+        RTSP format: <code>rtsp://user:pass@192.168.1.100:554/stream</code>
+      </div>
+      <div class="form-row">
+        <label>Camera Name</label>
+        <input type="text" id="camName" placeholder="e.g. North Forest Gate — Camera 1"/>
+      </div>
+      <div class="form-row">
+        <label>RTSP URL</label>
+        <input type="text" id="camUrl" placeholder="rtsp://192.168.1.100:554/stream"/>
+      </div>
+      <div class="gps-row">
+        <div class="form-row" style="margin:0">
+          <label>Camera Latitude</label>
+          <input type="number" id="camLat" placeholder="14.0000" step="0.000001"/>
+        </div>
+        <div class="form-row" style="margin:0">
+          <label>Camera Longitude</label>
+          <input type="number" id="camLng" placeholder="101.0000" step="0.000001"/>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="getCamLocation()" title="Use device GPS">📍 GPS</button>
+      </div>
+      <button class="btn btn-green" onclick="addCamera()">📹 Add Camera</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span>📹 Active Cameras</span><button class="btn btn-outline btn-sm" onclick="loadCameras()">🔄</button></div>
+    <div class="card-body">
+      <div id="camList"><div class="empty-state">No cameras yet.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- HISTORY TAB -->
+<div class="pane" id="pane-history">
+  <div class="card">
+    <div class="card-header">
+      <span>📋 Detection History</span>
+      <div style="display:flex;gap:6px">
+        <select id="histFilter" onchange="loadHistory()" style="border:1px solid #ccc;border-radius:5px;padding:3px 7px;font-size:11px;font-family:inherit">
+          <option value="all">All</option>
+          <option value="detected">Elephants Only</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="loadHistory()">🔄</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="alert-list" id="alertList"><div class="empty-state">No events yet.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS TAB -->
+<div class="pane" id="pane-settings">
+  <div class="card">
+    <div class="card-header">📲 LINE Notify Settings</div>
+    <div class="card-body">
+      <div class="form-row">
+        <label>LINE Token — Forest Detection (all elephants)</label>
+        <input type="password" id="sLineToken" placeholder="Paste LINE Notify token…"/>
+        <small style="color:#888;font-size:10px;margin-top:2px">Get token at <a href="https://notify-bot.line.me/my/" target="_blank" style="color:var(--green2)">notify-bot.line.me/my/</a> → rangers group</small>
+      </div>
+      <div class="form-row">
+        <label>LINE Token — Border Alert 🚨 (village boundary only)</label>
+        <input type="password" id="sBorderLineToken" placeholder="Separate token for village alert group (optional)…"/>
+        <small style="color:#888;font-size:10px;margin-top:2px">Leave blank to use the same token above. Set a different token to alert a separate "Village Alert" LINE group.</small>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-green" onclick="saveSettings()">💾 Save</button>
+        <button class="btn btn-blue" onclick="testLine()">📲 Test LINE</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">📱 SMS Alert Settings (Twilio)</div>
+    <div class="card-body">
+      <div class="info-box" style="margin-bottom:12px">
+        ℹ️ SMS is sent <strong>only when elephants enter a border zone</strong> — for immediate village warning.<br>
+        Sign up free at <a href="https://twilio.com" target="_blank" style="color:var(--blue)">twilio.com</a>. Phone numbers go in each zone's settings below.
+      </div>
+      <div class="form-row row3">
+        <div><label>Twilio Account SID</label><input type="password" id="sTwilioSid" placeholder="ACxxxxxxxx…"/></div>
+        <div><label>Twilio Auth Token</label><input type="password" id="sTwilioToken" placeholder="Auth token…"/></div>
+        <div><label>From Number</label><input type="text" id="sTwilioFrom" placeholder="+1415XXXXXXX"/></div>
+      </div>
+      <div class="form-row">
+        <label>Test SMS — Send to number</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="sTestSmsTo" placeholder="+66812345678" style="flex:1"/>
+          <button class="btn btn-amber" onclick="testSms()">📱 Send Test SMS</button>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-green" onclick="saveSettings()">💾 Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">⚙️ Detection Settings</div>
+    <div class="card-body">
+      <div class="form-row row3">
+        <div><label>Confidence (%)</label><input type="number" id="sConf" placeholder="50" min="10" max="100"/></div>
+        <div><label>Poll Interval (sec)</label><input type="number" id="sInterval" placeholder="5" min="1"/></div>
+        <div><label>Alert Cooldown (sec)</label><input type="number" id="sCooldown" placeholder="60" min="0"/></div>
+      </div>
+      <button class="btn btn-green" onclick="saveSettings()">💾 Save</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">ℹ️ Alert Flow</div>
+    <div class="card-body">
+      <div class="info-box">
+        <b>Normal forest detection</b> → LINE Notify (rangers token)<br>
+        <b>Border zone detection</b> → 🚨 Urgent LINE (village token) + 📱 SMS to all numbers in zone<br><br>
+        <b>AI Model:</b> YOLOv8n, COCO class #20 (elephant). Upgrade to <code>yolov8s.pt</code> for better accuracy.<br>
+        <b>Map:</b> Esri World Imagery (free satellite, no API key).
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /content -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── MAP SETUP ────────────────────────────────────────────────────────────────
+let map, satelliteLayer, streetLayer, currentLayer = 'satellite';
+let cameraMarkers = {};   // cam_id -> L.Marker
+let sightingMarkers = []; // L.Marker[]
+let sightingPolylines = {}; // cam_id -> L.Polyline (trail)
+let sightingData = [];    // all geolocated detections
+let mapHours = 24;
+
+function initMap() {
+  map = L.map('map', { center: [14.0, 101.0], zoom: 8 });
+
+  satelliteLayer = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { attribution: 'Esri World Imagery', maxZoom: 19 }
+  );
+  streetLayer = L.tileLayer(
+    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { attribution: '© OpenStreetMap', maxZoom: 19 }
+  );
+  satelliteLayer.addTo(map);
+}
+
+function setLayer(name) {
+  if (name === 'satellite') {
+    map.removeLayer(streetLayer);
+    satelliteLayer.addTo(map);
+  } else {
+    map.removeLayer(satelliteLayer);
+    streetLayer.addTo(map);
+  }
+  currentLayer = name;
+  document.getElementById('btnSatellite').classList.toggle('active-layer', name==='satellite');
+  document.getElementById('btnStreet').classList.toggle('active-layer', name==='street');
+}
+
+// Custom elephant icon
+const elephantIcon = L.divIcon({
+  html: '<div style="background:#c62828;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 6px rgba(0,0,0,0.4);border:2px solid white">🐘</div>',
+  iconSize: [32, 32], iconAnchor: [16, 16], popupAnchor: [0, -18], className: ''
+});
+const cameraIcon = L.divIcon({
+  html: '<div style="background:#1565c0;color:white;border-radius:6px;padding:3px 5px;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.4);border:2px solid white">📹</div>',
+  iconSize: [28, 28], iconAnchor: [14, 14], popupAnchor: [0, -16], className: ''
+});
+
+function addCameraMarker(cam) {
+  if (!cam.lat || !cam.lng) return;
+  if (cameraMarkers[cam.id]) { map.removeLayer(cameraMarkers[cam.id]); }
+  const m = L.marker([cam.lat, cam.lng], { icon: cameraIcon })
+    .addTo(map)
+    .bindPopup(`<div class="popup-body"><div class="popup-title">📹 ${cam.name}</div><div class="popup-sub">Camera location<br>GPS: ${cam.lat.toFixed(5)}, ${cam.lng.toFixed(5)}</div></div>`);
+  cameraMarkers[cam.id] = m;
+}
+
+function removeCameraMarker(camId) {
+  if (cameraMarkers[camId]) { map.removeLayer(cameraMarkers[camId]); delete cameraMarkers[camId]; }
+}
+
+async function refreshMapSightings(hours) {
+  mapHours = parseFloat(hours) || 24;
+  const url = mapHours > 0 ? `/api/sightings?hours=${mapHours}` : '/api/sightings?hours=99999';
+  sightingData = await fetch(url).then(r => r.json());
+  renderSightings();
+  updateSightingList();
+}
+
+function renderSightings() {
+  // Remove old markers + trails
+  sightingMarkers.forEach(m => map.removeLayer(m));
+  sightingMarkers = [];
+  Object.values(sightingPolylines).forEach(p => map.removeLayer(p));
+  sightingPolylines = {};
+
+  const byCam = {};
+  sightingData.forEach(s => {
+    const key = s.cam_id || s.source;
+    if (!byCam[key]) byCam[key] = [];
+    byCam[key].push(s);
+  });
+
+  // Draw trail lines per camera (oldest → newest)
+  Object.entries(byCam).forEach(([key, list]) => {
+    const sorted = [...list].sort((a,b) => a.timestamp.localeCompare(b.timestamp));
+    if (sorted.length > 1) {
+      const latlngs = sorted.map(s => [s.lat, s.lng]);
+      const poly = L.polyline(latlngs, { color: '#ff5722', weight: 2.5, dashArray: '6,4', opacity: 0.7 }).addTo(map);
+      sightingPolylines[key] = poly;
+    }
+  });
+
+  // Draw elephant markers
+  sightingData.forEach(s => {
+    const m = L.marker([s.lat, s.lng], { icon: elephantIcon })
+      .addTo(map)
+      .bindPopup(`
+        <div class="leaflet-popup-content" style="width:260px">
+          <img class="popup-img" src="data:image/jpeg;base64,${s.image_b64}" onerror="this.style.display='none'"/>
+          <div class="popup-body">
+            <div class="popup-title">🐘 ${s.elephant_count} Elephant${s.elephant_count>1?'s':''} Detected</div>
+            <div class="popup-sub">
+              📍 ${s.source}<br>
+              🕐 ${new Date(s.timestamp).toLocaleString()}<br>
+              🎯 ${s.detections.map(d=>Math.round(d.confidence*100)+'%').join(', ')} confidence<br>
+              GPS: ${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}
+            </div>
+          </div>
+        </div>
+      `, { maxWidth: 280 });
+    sightingMarkers.push(m);
+  });
+
+  document.getElementById('sightingCount').textContent = sightingData.length;
+
+  // Fit bounds if we have sightings
+  if (sightingData.length) {
+    const points = sightingData.map(s => [s.lat, s.lng]);
+    map.fitBounds(L.latLngBounds(points).pad(0.2));
+  }
+}
+
+function updateSightingList() {
+  const list = document.getElementById('sightingList');
+  if (!sightingData.length) {
+    list.innerHTML = '<div class="empty-state">No GPS sightings yet.<br>Add cameras with coordinates<br>or use Detect tab with location.</div>';
+    return;
+  }
+  const sorted = [...sightingData].sort((a,b) => b.timestamp.localeCompare(a.timestamp));
+  list.innerHTML = sorted.map(s => `
+    <div class="sight-item" onclick="flyTo(${s.lat},${s.lng})">
+      <img class="sight-thumb" src="data:image/jpeg;base64,${s.image_b64}" onerror="this.style.display='none'"/>
+      <div class="sight-info">
+        <div class="sight-src">${s.source}</div>
+        <div class="sight-time">${new Date(s.timestamp).toLocaleString()}</div>
+        <div class="sight-count">🐘 ×${s.elephant_count}</div>
+        <div class="sight-gps">📍 ${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function flyTo(lat, lng) {
+  map.flyTo([lat, lng], 14, { duration: 1.2 });
+  switchTab('map');
+}
+
+function addNewSightingToMap(record) {
+  if (!record.lat || !record.lng) return;
+  sightingData.unshift(record);
+  // Add marker directly without full re-render
+  const m = L.marker([record.lat, record.lng], { icon: elephantIcon })
+    .addTo(map)
+    .bindPopup(`
+      <div class="leaflet-popup-content" style="width:260px">
+        <img class="popup-img" src="data:image/jpeg;base64,${record.image_b64}" onerror="this.style.display='none'"/>
+        <div class="popup-body">
+          <div class="popup-title">🐘 ${record.elephant_count} Elephant${record.elephant_count>1?'s':''} Detected</div>
+          <div class="popup-sub">
+            📍 ${record.source}<br>
+            🕐 ${new Date(record.timestamp).toLocaleString()}<br>
+            GPS: ${record.lat.toFixed(5)}, ${record.lng.toFixed(5)}
+          </div>
+        </div>
+      </div>
+    `, { maxWidth: 280 });
+  sightingMarkers.push(m);
+  map.flyTo([record.lat, record.lng], 13, { duration: 1.5 });
+  m.openPopup();
+  updateSightingList();
+  document.getElementById('sightingCount').textContent = sightingData.length;
+}
+
+// ─── SIDEBAR TABS ─────────────────────────────────────────────────────────────
+function switchSideTab(n) {
+  document.getElementById('sideTab0').style.cssText = n===0
+    ? 'flex:1;padding:9px 8px;text-align:center;font-size:12px;font-weight:700;cursor:pointer;color:white;background:var(--green)'
+    : 'flex:1;padding:9px 8px;text-align:center;font-size:12px;font-weight:700;cursor:pointer;color:#555;background:#f5f5f5';
+  document.getElementById('sideTab1').style.cssText = n===1
+    ? 'flex:1;padding:9px 8px;text-align:center;font-size:12px;font-weight:700;cursor:pointer;color:white;background:#ff5722'
+    : 'flex:1;padding:9px 8px;text-align:center;font-size:12px;font-weight:700;cursor:pointer;color:#555;background:#f5f5f5';
+  document.getElementById('sightingPanel').style.display = n===0 ? '' : 'none';
+  document.getElementById('zonesPanel').style.display   = n===1 ? '' : 'none';
+}
+
+// ─── BORDER ZONES ─────────────────────────────────────────────────────────────
+let zonesData = {};        // id → zone object
+let zoneOverlays = {};     // id → Leaflet circle/polygon
+let drawingMode = false;
+
+function toggleDrawZone() {
+  drawingMode = !drawingMode;
+  const btn  = document.getElementById('btnDrawZone');
+  const hint = document.getElementById('drawHint');
+  if (drawingMode) {
+    btn.classList.add('draw-active');
+    btn.textContent = '✕ Cancel Drawing';
+    hint.style.display = 'block';
+    map.getContainer().style.cursor = 'crosshair';
+    map.once('click', onMapClickForZone);
+  } else {
+    btn.classList.remove('draw-active');
+    btn.textContent = '🏘️ Draw Border Zone';
+    hint.style.display = 'none';
+    map.getContainer().style.cursor = '';
+    map.off('click', onMapClickForZone);
+  }
+}
+
+function onMapClickForZone(e) {
+  drawingMode = false;
+  document.getElementById('btnDrawZone').classList.remove('draw-active');
+  document.getElementById('btnDrawZone').textContent = '🏘️ Draw Border Zone';
+  document.getElementById('drawHint').style.display = 'none';
+  map.getContainer().style.cursor = '';
+  showZoneModal(e.latlng.lat, e.latlng.lng);
+}
+
+function showZoneModal(lat, lng) {
+  // Build modal
+  const existing = document.getElementById('zoneModal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'zoneModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:12px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3);overflow:hidden">
+      <div style="background:#ff5722;color:white;padding:14px 18px;font-weight:700;font-size:15px;display:flex;justify-content:space-between;align-items:center">
+        🏘️ New Border Zone
+        <button onclick="document.getElementById('zoneModal').remove()" style="background:none;border:none;color:white;font-size:18px;cursor:pointer">✕</button>
+      </div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+        <div style="background:#fff3e0;border-radius:6px;padding:8px 12px;font-size:11px;color:#e65100">
+          📍 Center: <strong>${lat.toFixed(5)}, ${lng.toFixed(5)}</strong>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Zone Name</label>
+          <input id="zn_name" type="text" placeholder="e.g. North Village Border" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box"/>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Village Name</label>
+          <input id="zn_village" type="text" placeholder="e.g. Ban Pha Kham" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box"/>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Radius (metres)</label>
+          <input id="zn_radius" type="number" value="500" min="50" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box"/>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">📱 SMS Numbers (comma-separated)</label>
+          <input id="zn_sms" type="text" placeholder="+66812345678, +66899999999" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box"/>
+          <div style="font-size:10px;color:#888;margin-top:3px">Leave blank if not using SMS. Requires Twilio in Settings.</div>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">📲 LINE Token (zone-specific, optional)</label>
+          <input id="zn_line" type="password" placeholder="Separate LINE token for this zone's village group…" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box"/>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Zone Colour</label>
+          <input id="zn_color" type="color" value="#ff5722" style="height:34px;width:60px;border:none;cursor:pointer"/>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button onclick="document.getElementById('zoneModal').remove()" style="flex:1;padding:9px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:13px">Cancel</button>
+          <button onclick="submitZone(${lat},${lng})" style="flex:2;padding:9px;border:none;border-radius:6px;background:#ff5722;color:white;cursor:pointer;font-size:13px;font-weight:700">✅ Create Zone</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('zn_name').focus();
+}
+
+async function submitZone(lat, lng) {
+  const name    = document.getElementById('zn_name').value.trim();
+  const village = document.getElementById('zn_village').value.trim();
+  const radius  = parseFloat(document.getElementById('zn_radius').value) || 500;
+  const sms     = document.getElementById('zn_sms').value.trim();
+  const line    = document.getElementById('zn_line').value.trim();
+  const color   = document.getElementById('zn_color').value;
+  if (!name || !village) { alert('Zone name and village name are required.'); return; }
+
+  const fd = new FormData();
+  fd.append('name', name); fd.append('village', village);
+  fd.append('shape', 'circle'); fd.append('lat', lat); fd.append('lng', lng);
+  fd.append('radius', radius); fd.append('color', color);
+  fd.append('sms_numbers', sms); fd.append('line_token', line);
+
+  const r = await fetch('/api/zones', { method:'POST', body:fd });
+  if (r.ok) {
+    const zone = await r.json();
+    zonesData[zone.id] = zone;
+    addZoneToMap(zone);
+    renderZoneList();
+    document.getElementById('zoneModal').remove();
+    toast(`✅ Zone "${name}" created!`);
+    switchSideTab(1);
+  } else {
+    toast('❌ Failed to create zone', true);
+  }
+}
+
+function addZoneToMap(zone) {
+  removeZoneFromMap(zone.id);
+  if (zone.shape === 'circle' && zone.lat && zone.lng) {
+    const circle = L.circle([zone.lat, zone.lng], {
+      radius: zone.radius,
+      color: zone.color || '#ff5722',
+      fillColor: zone.color || '#ff5722',
+      fillOpacity: 0.12,
+      weight: 2,
+      dashArray: '6 4',
+    }).addTo(map);
+    circle.bindTooltip(`<b>${zone.name}</b><br>🏘️ ${zone.village}<br>Radius: ${zone.radius}m`, { sticky: true });
+    zoneOverlays[zone.id] = circle;
+  }
+}
+
+function removeZoneFromMap(zoneId) {
+  if (zoneOverlays[zoneId]) {
+    map.removeLayer(zoneOverlays[zoneId]);
+    delete zoneOverlays[zoneId];
+  }
+}
+
+function renderZoneList() {
+  const list = document.getElementById('zoneList');
+  const zones = Object.values(zonesData);
+  if (!zones.length) {
+    list.innerHTML = '<div class="empty-state" style="padding:20px">No border zones yet.<br>Click "Draw New Zone" above.</div>';
+    return;
+  }
+  list.innerHTML = zones.map(z => `
+    <div class="zone-card">
+      <div style="display:flex;align-items:flex-start;gap:8px">
+        <div class="zone-dot" style="background:${z.color||'#ff5722'}"></div>
+        <div style="flex:1;min-width:0">
+          <div class="zone-name">${z.name}</div>
+          <div class="zone-village">🏘️ ${z.village}</div>
+          <div class="zone-detail">⭕ ${z.radius}m radius</div>
+          ${z.sms_numbers ? `<div class="zone-detail">📱 SMS: ${z.sms_numbers.split(',').length} number(s)</div>` : ''}
+        </div>
+        <button onclick="removeZone('${z.id}')" style="border:none;background:none;color:#f44336;cursor:pointer;font-size:16px;line-height:1;flex-shrink:0" title="Delete zone">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+async function removeZone(id) {
+  if (!confirm(`Delete zone "${zonesData[id]?.name}"?`)) return;
+  const r = await fetch(`/api/zones/${id}`, { method:'DELETE' });
+  if (r.ok) {
+    delete zonesData[id];
+    removeZoneFromMap(id);
+    renderZoneList();
+    toast('🗑️ Zone removed');
+  }
+}
+
+// ─── WEBSOCKET ────────────────────────────────────────────────────────────────
+let ws, wsReconnectTimer;
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    document.getElementById('wsDot').className = 'ws-dot connected';
+    document.getElementById('wsStatus').textContent = 'Live';
+    clearTimeout(wsReconnectTimer);
+  };
+
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'init') {
+      (msg.cameras || []).forEach(c => addCameraMarker(c));
+      // Load zones from init
+      (msg.zones || []).forEach(z => { zonesData[z.id] = z; addZoneToMap(z); });
+      renderZoneList();
+      if (msg.history?.length) {
+        sightingData = msg.history;
+        renderSightings();
+        updateSightingList();
+      }
+    } else if (msg.type === 'detection') {
+      const r = msg.record;
+      totalChecks++;
+      updateStats();
+      if (r.detected) {
+        showAlertBanner(r.source, r.elephant_count, r.border_alert, r.villages);
+        if (r.lat && r.lng) addNewSightingToMap(r);
+        addToHistoryTop(r);
+        addToDashboardFeed(r);
+      }
+    } else if (msg.type === 'camera_added') {
+      addCameraMarker(msg.camera);
+    } else if (msg.type === 'camera_removed') {
+      removeCameraMarker(msg.cam_id);
+    } else if (msg.type === 'zone_added') {
+      zonesData[msg.zone.id] = msg.zone;
+      addZoneToMap(msg.zone);
+      renderZoneList();
+    } else if (msg.type === 'zone_removed') {
+      delete zonesData[msg.zone_id];
+      removeZoneFromMap(msg.zone_id);
+      renderZoneList();
+    }
+  };
+
+  ws.onclose = () => {
+    document.getElementById('wsDot').className = 'ws-dot';
+    document.getElementById('wsStatus').textContent = 'Reconnecting…';
+    wsReconnectTimer = setTimeout(connectWS, 3000);
+  };
+}
+
+// ─── ALERT BANNER ─────────────────────────────────────────────────────────────
+let bannerTimer;
+function showAlertBanner(source, count, isBorder=false, villages=[]) {
+  const b = document.getElementById('alertBanner');
+  if (isBorder) {
+    const vList = (villages||[]).join(', ') || 'village';
+    document.getElementById('alertBannerText').textContent =
+      `🚨 BORDER ALERT — ${count} elephant${count>1?'s':''} near ${vList}! Villagers notified.`;
+    b.className = 'show border';
+  } else {
+    document.getElementById('alertBannerText').textContent = `${count} elephant${count>1?'s':''} at ${source}`;
+    b.className = 'show';
+  }
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => { b.className = ''; }, isBorder ? 10000 : 6000);
+}
+
+// ─── TABS ─────────────────────────────────────────────────────────────────────
+const TABS = ['dashboard','map','detect','cameras','history','settings'];
+function switchTab(name) {
+  document.querySelectorAll('.nav-tab').forEach((t, i) => t.classList.toggle('active', TABS[i]===name));
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+  document.getElementById(`pane-${name}`).classList.add('active');
+  if (name==='dashboard') { initDbMap(); refreshDashboard(); }
+  if (name==='map') { setTimeout(() => map.invalidateSize(), 50); refreshMapSightings(mapHours); }
+  if (name==='cameras') loadCameras();
+  if (name==='history') loadHistory();
+  if (name==='settings') loadSettings();
+}
+
+// ─── DETECT / UPLOAD ──────────────────────────────────────────────────────────
+let totalChecks = 0;
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag'); const f = e.dataTransfer.files[0]; if(f) handleFile(f); });
+
+async function handleFile(file) {
+  if (!file) return;
+  document.getElementById('uploadProgress').style.display = 'block';
+  animateProgress();
+  const fd = new FormData();
+  fd.append('file', file);
+  const lat = parseFloat(document.getElementById('uploadLat').value);
+  const lng = parseFloat(document.getElementById('uploadLng').value);
+  const locName = document.getElementById('locName').value.trim();
+  if (!isNaN(lat)) fd.append('lat', lat);
+  if (!isNaN(lng)) fd.append('lng', lng);
+  if (locName) fd.append('location_name', locName);
+  try {
+    const resp = await fetch('/api/detect', { method:'POST', body:fd });
+    const data = await resp.json();
+    showResult(data);
+    totalChecks++;
+    updateStats();
+  } catch(e) {
+    toast('❌ Detection failed', true);
+  } finally {
+    document.getElementById('uploadProgress').style.display = 'none';
+    document.getElementById('progressBar').style.width = '0%';
+  }
+}
+
+function animateProgress() {
+  let w = 0;
+  const bar = document.getElementById('progressBar');
+  const iv = setInterval(() => { w = Math.min(w + Math.random()*18, 85); bar.style.width = w+'%'; if(w>=85) clearInterval(iv); }, 200);
+}
+
+function showResult(data) {
+  const box = document.getElementById('resultBox');
+  box.style.display = '';
+  document.getElementById('resultImg').src = 'data:image/jpeg;base64,' + data.image_b64;
+  const badge = document.getElementById('resultBadge');
+  if (data.detected) {
+    badge.className = 'det-badge found';
+    badge.innerHTML = `🐘 ${data.elephant_count} Elephant${data.elephant_count>1?'s':''} Detected!`;
+  } else {
+    badge.className = 'det-badge clear';
+    badge.innerHTML = '✅ No Elephants Detected';
+  }
+  document.getElementById('detList').innerHTML = data.detections.map((d,i) => {
+    const pct = Math.round(d.confidence*100);
+    return `<li><span>Elephant #${i+1}</span><span><strong>${pct}%</strong> <span class="conf-bar" style="width:${pct*0.5}px"></span></span></li>`;
+  }).join('');
+  const gpsEl = document.getElementById('resultGPS');
+  gpsEl.textContent = data.lat ? `📍 GPS: ${data.lat.toFixed(6)}, ${data.lng.toFixed(6)}` : '';
+}
+
+function clearResult() {
+  document.getElementById('resultBox').style.display = 'none';
+  document.getElementById('fileInput').value = '';
+}
+
+function getMyLocation() {
+  navigator.geolocation?.getCurrentPosition(p => {
+    document.getElementById('uploadLat').value = p.coords.latitude.toFixed(6);
+    document.getElementById('uploadLng').value = p.coords.longitude.toFixed(6);
+    toast('📍 Location acquired!');
+  }, () => toast('Could not get location', true), { enableHighAccuracy: true });
+}
+function getCamLocation() {
+  navigator.geolocation?.getCurrentPosition(p => {
+    document.getElementById('camLat').value = p.coords.latitude.toFixed(6);
+    document.getElementById('camLng').value = p.coords.longitude.toFixed(6);
+    toast('📍 Location acquired!');
+  }, () => toast('Could not get location', true), { enableHighAccuracy: true });
+}
+
+// ─── CAMERAS ─────────────────────────────────────────────────────────────────
+async function loadCameras() {
+  const list = document.getElementById('camList');
+  const cams = await fetch('/api/cameras').then(r=>r.json()).catch(()=>[]);
+  if (!cams.length) { list.innerHTML = '<div class="empty-state">No cameras yet.</div>'; return; }
+  list.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px">${cams.map(c=>`
+    <div class="cam-card">
+      <div style="font-size:20px">${c.enabled?'📹':'📷'}</div>
+      <div style="flex:1;min-width:0">
+        <div class="cam-name">${c.name}</div>
+        <div class="cam-url">${c.url}</div>
+        ${c.lat ? `<div class="cam-gps">📍 ${parseFloat(c.lat).toFixed(5)}, ${parseFloat(c.lng).toFixed(5)}</div>` : '<div style="font-size:10px;color:#f57f17">⚠️ No GPS — won\'t appear on map</div>'}
+        ${c.last_detection ? `<div style="font-size:10px;color:#888">Last: 🐘 ${c.last_count} @ ${new Date(c.last_detection).toLocaleString()}</div>` : ''}
+      </div>
+      <span class="cam-status ${c.status}">${c.status}</span>
+      <button class="btn btn-outline btn-sm" onclick="toggleCamera('${c.id}')">${c.enabled?'⏸':'▶'}</button>
+      <button class="btn btn-red btn-sm" onclick="removeCamera('${c.id}')">✕</button>
+    </div>
+  `).join('')}</div>`;
+}
+
+async function addCamera() {
+  const name = document.getElementById('camName').value.trim();
+  const url  = document.getElementById('camUrl').value.trim();
+  const lat  = parseFloat(document.getElementById('camLat').value) || null;
+  const lng  = parseFloat(document.getElementById('camLng').value) || null;
+  if (!name || !url) { toast('Please enter name and RTSP URL', true); return; }
+  const fd = new FormData();
+  fd.append('name', name); fd.append('url', url);
+  if (lat !== null) fd.append('lat', lat);
+  if (lng !== null) fd.append('lng', lng);
+  await fetch('/api/cameras', { method:'POST', body:fd });
+  ['camName','camUrl','camLat','camLng'].forEach(id => document.getElementById(id).value = '');
+  toast('📹 Camera added!');
+  loadCameras();
+}
+
+async function removeCamera(id) {
+  if (!confirm('Remove camera?')) return;
+  await fetch(`/api/cameras/${id}`, { method:'DELETE' });
+  loadCameras();
+}
+async function toggleCamera(id) {
+  await fetch(`/api/cameras/${id}/toggle`, { method:'PATCH' });
+  loadCameras();
+}
+
+// ─── HISTORY ─────────────────────────────────────────────────────────────────
+let historyCache = [];
+function addToHistoryTop(record) {
+  historyCache.unshift(record);
+  if (document.getElementById('pane-history').classList.contains('active')) renderHistory();
+}
+
+async function loadHistory() {
+  const filter = document.getElementById('histFilter')?.value || 'all';
+  historyCache = await fetch(`/api/history?limit=100${filter==='detected'?'&detected_only=true':''}`).then(r=>r.json()).catch(()=>[]);
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = document.getElementById('alertList');
+  if (!historyCache.length) { list.innerHTML = '<div class="empty-state">No events yet.</div>'; return; }
+  list.innerHTML = historyCache.map(h => `
+    <div class="alert-card ${h.detected?'detected':'clear'}">
+      <img class="alert-thumb" src="data:image/jpeg;base64,${h.image_b64}" onerror="this.style.display='none'"/>
+      <div class="alert-info">
+        <div class="alert-source">${h.source}</div>
+        <div class="alert-time">${new Date(h.timestamp).toLocaleString()}</div>
+        <div class="alert-count ${h.detected?'':'clear'}">${h.detected?`🐘 ${h.elephant_count} elephant${h.elephant_count>1?'s':''}`:' ✅ Clear'}</div>
+        ${h.lat ? `<div class="alert-gps">📍 ${parseFloat(h.lat).toFixed(4)}, ${parseFloat(h.lng).toFixed(4)}
+          <button class="btn btn-outline btn-sm" style="margin-left:6px;padding:2px 6px;font-size:10px" onclick="flyTo(${h.lat},${h.lng})">🗺️ Map</button>
+        </div>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─── SETTINGS ─────────────────────────────────────────────────────────────────
+async function loadSettings() {
+  const s = await fetch('/api/settings').then(r=>r.json()).catch(()=>({}));
+  document.getElementById('sConf').value = Math.round((s.confidence||0.5)*100);
+  document.getElementById('sInterval').value = s.stream_interval||5;
+  document.getElementById('sCooldown').value = s.alert_cooldown||60;
+  if (s.twilio_sid)  document.getElementById('sTwilioSid').value  = s.twilio_sid;
+  if (s.twilio_from) document.getElementById('sTwilioFrom').value = s.twilio_from;
+}
+async function saveSettings() {
+  const fd = new FormData();
+  const token       = document.getElementById('sLineToken').value.trim();
+  const borderToken = document.getElementById('sBorderLineToken').value.trim();
+  const sid         = document.getElementById('sTwilioSid').value.trim();
+  const tToken      = document.getElementById('sTwilioToken').value.trim();
+  const tFrom       = document.getElementById('sTwilioFrom').value.trim();
+  if (token)       fd.append('line_token', token);
+  if (borderToken) fd.append('border_line_token', borderToken);
+  if (sid)         fd.append('twilio_sid', sid);
+  if (tToken)      fd.append('twilio_token', tToken);
+  if (tFrom)       fd.append('twilio_from', tFrom);
+  fd.append('confidence', (parseFloat(document.getElementById('sConf').value)||50)/100);
+  fd.append('stream_interval', document.getElementById('sInterval').value||5);
+  fd.append('alert_cooldown', document.getElementById('sCooldown').value||60);
+  const r = await fetch('/api/settings', { method:'POST', body:fd });
+  if (r.ok) toast('✅ Settings saved!');
+}
+async function testLine() {
+  const btn = event.target;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Sending…';
+  try {
+    const r = await fetch('/api/test-line', { method:'POST' });
+    const d = await r.json();
+    toast(d.ok ? '📲 LINE sent! Check your app.' : '❌ LINE failed — check token', !d.ok);
+  } finally { btn.disabled=false; btn.innerHTML='📲 Test LINE'; }
+}
+async function testSms() {
+  const to = document.getElementById('sTestSmsTo').value.trim();
+  if (!to) { toast('Enter a phone number to test', true); return; }
+  const btn = event.target;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Sending…';
+  try {
+    const fd = new FormData(); fd.append('to', to);
+    const r = await fetch('/api/test-sms', { method:'POST', body:fd });
+    if (r.ok) {
+      const d = await r.json();
+      const ok = Object.values(d).every(v=>v);
+      toast(ok ? '📱 SMS sent! Check phone.' : '❌ SMS failed — check Twilio credentials', !ok);
+    } else {
+      const d = await r.json().catch(()=>({}));
+      toast('❌ ' + (d.detail || 'SMS failed — configure Twilio first'), true);
+    }
+  } finally { btn.disabled=false; btn.innerHTML='📱 Send Test SMS'; }
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+let dbMap = null, dbMapInit = false;
+let detChart = null;
+let chartMode = 'daily';  // 'daily' | 'monthly'
+let dbFeedItems = [];     // most-recent-first
+
+function initDbMap() {
+  if (dbMapInit) { dbMap.invalidateSize(); return; }
+  dbMapInit = true;
+  dbMap = L.map('dbMap', { zoomControl: false, attributionControl: false });
+  L.control.zoom({ position: 'topright' }).addTo(dbMap);
+  L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: 19 }
+  ).addTo(dbMap);
+  dbMap.setView([13.75, 100.5], 6);
+}
+
+function setChartMode(mode) {
+  chartMode = mode;
+  document.getElementById('btnDaily').classList.toggle('active', mode==='daily');
+  document.getElementById('btnMonthly').classList.toggle('active', mode==='monthly');
+  refreshDashboard();
+}
+
+async function refreshAlertStatus() {
+  const s = await fetch('/api/settings').then(r=>r.json()).catch(()=>({}));
+  const lineOk  = !!(s.line_configured);
+  const smsOk   = !!(s.twilio_configured);
+
+  const lineDot  = document.getElementById('lineStatusDot');
+  const lineText = document.getElementById('lineStatusText');
+  const smsDot   = document.getElementById('smsStatusDot');
+  const smsText  = document.getElementById('smsStatusText');
+
+  if (lineDot) {
+    lineDot.style.background  = lineOk ? '#4caf50' : '#f44336';
+    lineText.textContent      = lineOk ? 'Configured — alerts active' : 'Not configured (go to Settings)';
+    lineText.style.color      = lineOk ? '#2e7d32' : '#c62828';
+  }
+  if (smsDot) {
+    smsDot.style.background   = smsOk ? '#4caf50' : '#f44336';
+    smsText.textContent       = smsOk ? 'Configured — SMS active' : 'Not configured (go to Settings)';
+    smsText.style.color       = smsOk ? '#2e7d32' : '#c62828';
+  }
+}
+
+async function testLineDash() {
+  const btn = document.getElementById('btnTestLineDash');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const r = await fetch('/api/test-line', { method:'POST' });
+    if (r.ok) {
+      const d = await r.json();
+      toast(d.ok ? '📲 LINE test sent! Check your app.' : '❌ LINE failed — add token in Settings', !d.ok);
+    } else {
+      toast('❌ LINE not configured — go to Settings → LINE Token', true);
+    }
+  } catch { toast('❌ Server error', true); }
+  finally { btn.disabled=false; btn.innerHTML='📲 Test LINE'; }
+}
+
+async function testSmsDash() {
+  const to = prompt('Enter phone number to test SMS:\n(e.g. +66812345678)');
+  if (!to) return;
+  const btn = document.getElementById('btnTestSmsDash');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const fd = new FormData(); fd.append('to', to.trim());
+    const r = await fetch('/api/test-sms', { method:'POST', body:fd });
+    if (r.ok) {
+      const d = await r.json();
+      const ok = Object.values(d).every(v=>v);
+      toast(ok ? `📱 SMS sent to ${to}!` : '❌ SMS failed — check Twilio credentials', !ok);
+    } else {
+      const d = await r.json().catch(()=>({}));
+      toast('❌ ' + (d.detail || 'Twilio not configured — go to Settings'), true);
+    }
+  } catch { toast('❌ Server error', true); }
+  finally { btn.disabled=false; btn.innerHTML='📱 Test SMS'; }
+}
+
+async function refreshDashboard() {
+  refreshAlertStatus();
+  const history = await fetch('/api/history?limit=2000').then(r=>r.json()).catch(()=>[]);
+  const cameras = await fetch('/api/cameras').then(r=>r.json()).catch(()=>[]);
+  const detected = history.filter(h => h.detected);
+
+  const now   = new Date();
+  const today = now.toDateString();
+  const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+
+  // ── KPIs ────────────────────────────────────────────────────────────────────
+  const todayDet   = detected.filter(h => new Date(h.timestamp).toDateString() === today);
+  const borderToday = todayDet.filter(h => h.border_alert);
+  const thisMonth  = detected.filter(h => {
+    const d = new Date(h.timestamp);
+    return `${d.getFullYear()}-${d.getMonth()}` === monthKey;
+  });
+
+  document.getElementById('kpiToday').textContent    = todayDet.length;
+  document.getElementById('kpiTodaySub').textContent = `${detected.length} total all time`;
+  document.getElementById('kpiBorder').textContent   = borderToday.length;
+  document.getElementById('kpiBorderSub').textContent = `${detected.filter(h=>h.border_alert).length} total border alerts`;
+  document.getElementById('kpiMonth').textContent    = thisMonth.length;
+  document.getElementById('kpiMonthSub').textContent = now.toLocaleString('default',{month:'long',year:'numeric'});
+  document.getElementById('kpiCams').textContent     = cameras.filter(c=>c.enabled).length;
+  document.getElementById('kpiCamsSub').textContent  = `${cameras.length} total registered`;
+  document.getElementById('kpiZones').textContent    = Object.keys(zonesData).length;
+  document.getElementById('kpiZonesSub').textContent = Object.keys(zonesData).length
+    ? Object.values(zonesData).map(z=>z.village).slice(0,2).join(', ')
+    : 'No zones configured';
+
+  // ── Chart ───────────────────────────────────────────────────────────────────
+  const days = parseInt(document.getElementById('chartDaysFilter').value) || 30;
+  buildChart(detected, days);
+
+  // ── Live feed (all-time, most recent first) ──────────────────────────────────
+  dbFeedItems = detected.slice(0, 60);
+  renderDbFeed();
+
+  // ── Mini map markers ─────────────────────────────────────────────────────────
+  if (dbMapInit) renderDbMapMarkers(detected.filter(h => h.lat));
+
+  // ── Top sources ──────────────────────────────────────────────────────────────
+  renderTopSources(detected);
+}
+
+function buildChart(detected, days) {
+  const ctx = document.getElementById('detectionChart').getContext('2d');
+
+  if (chartMode === 'daily') {
+    // Build last N days buckets
+    const labels = [], counts = [], borderCounts = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i); d.setHours(0,0,0,0);
+      const key = d.toDateString();
+      labels.push(days <= 30
+        ? d.toLocaleDateString('default',{month:'short',day:'numeric'})
+        : d.toLocaleDateString('default',{month:'short',day:'numeric'}));
+      const dayItems = detected.filter(h => new Date(h.timestamp).toDateString() === key);
+      counts.push(dayItems.length);
+      borderCounts.push(dayItems.filter(h => h.border_alert).length);
+    }
+    _renderChart(ctx, labels, counts, borderCounts, 'Daily Detections');
+  } else {
+    // Monthly — last 12 months
+    const buckets = {};
+    const borderBuckets = {};
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
+      const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      buckets[k] = 0; borderBuckets[k] = 0;
+    }
+    detected.forEach(h => {
+      const d = new Date(h.timestamp);
+      const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      if (k in buckets) {
+        buckets[k]++;
+        if (h.border_alert) borderBuckets[k]++;
+      }
+    });
+    const labels = Object.keys(buckets).map(k => {
+      const [y, m] = k.split('-');
+      return new Date(parseInt(y), parseInt(m)-1).toLocaleDateString('default',{month:'short',year:'2-digit'});
+    });
+    _renderChart(ctx, labels, Object.values(buckets), Object.values(borderBuckets), 'Monthly Detections');
+  }
+}
+
+function _renderChart(ctx, labels, counts, borderCounts, label) {
+  if (detChart) { detChart.destroy(); detChart = null; }
+
+  // Only show every Nth label when many bars
+  const step = labels.length > 60 ? 7 : labels.length > 30 ? 3 : 1;
+  const tickLabels = labels.map((l, i) => i % step === 0 ? l : '');
+
+  detChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: tickLabels,
+      datasets: [
+        {
+          label: 'All Detections',
+          data: counts,
+          backgroundColor: 'rgba(46,125,50,0.7)',
+          borderColor: '#2e7d32',
+          borderWidth: 1,
+          borderRadius: 3,
+        },
+        {
+          label: '🚨 Border Alerts',
+          data: borderCounts,
+          backgroundColor: 'rgba(230,81,0,0.75)',
+          borderColor: '#e65100',
+          borderWidth: 1,
+          borderRadius: 3,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            title: (items) => labels[items[0].dataIndex] || '',
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
+        y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: '#f0f0f0' } }
+      }
+    }
+  });
+}
+
+function renderDbFeed() {
+  const list = document.getElementById('dbFeedList');
+  if (!dbFeedItems.length) {
+    list.innerHTML = '<div class="empty-state" style="padding:24px">No incidents yet.<br>Waiting for detections…</div>';
+    return;
+  }
+  list.innerHTML = dbFeedItems.map((h, i) => `
+    <div class="feed-item ${h.border_alert ? 'border-item' : ''} ${i === 0 ? 'new-item' : ''}">
+      <img class="feed-thumb" src="data:image/jpeg;base64,${h.image_b64}" onerror="this.style.display='none'"/>
+      <div class="feed-info">
+        <div class="feed-src">${h.source}${h.border_alert ? '<span class="feed-badge">BORDER</span>' : ''}</div>
+        <div class="feed-time">${formatRelTime(h.timestamp)}</div>
+        <div class="feed-count">🐘 ${h.elephant_count} elephant${h.elephant_count>1?'s':''}</div>
+        ${h.lat ? `<div style="font-size:10px;color:#aaa">📍 ${parseFloat(h.lat).toFixed(4)}, ${parseFloat(h.lng).toFixed(4)}</div>` : ''}
+        ${h.villages?.length ? `<div style="font-size:10px;color:#e65100;font-weight:600">🏘️ ${h.villages.join(', ')}</div>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+function addToDashboardFeed(record) {
+  if (!record.detected) return;
+  dbFeedItems.unshift(record);
+  if (dbFeedItems.length > 60) dbFeedItems.pop();
+  // Partial KPI refresh
+  const todayEl = document.getElementById('kpiToday');
+  if (todayEl) {
+    const cur = parseInt(todayEl.textContent) || 0;
+    if (new Date(record.timestamp).toDateString() === new Date().toDateString()) {
+      todayEl.textContent = cur + 1;
+      if (record.border_alert) {
+        const be = document.getElementById('kpiBorder');
+        if (be) be.textContent = (parseInt(be.textContent)||0) + 1;
+      }
+    }
+  }
+  renderDbFeed();
+}
+
+function renderDbMapMarkers(sightings) {
+  // Clear existing layers (except tile)
+  dbMap.eachLayer(l => { if (l instanceof L.CircleMarker || l instanceof L.Marker) dbMap.removeLayer(l); });
+
+  if (!sightings.length) return;
+  const bounds = [];
+  sightings.forEach(h => {
+    const isBorder = h.border_alert;
+    const marker = L.circleMarker([h.lat, h.lng], {
+      radius: 7 + Math.min((h.elephant_count||1) * 2, 10),
+      fillColor: isBorder ? '#e65100' : '#2e7d32',
+      color: isBorder ? '#bf360c' : '#1b5e20',
+      weight: 1.5,
+      fillOpacity: 0.7,
+    }).addTo(dbMap);
+    marker.bindTooltip(
+      `<b>${h.source}</b><br>🐘 ${h.elephant_count} elephant(s)<br>${formatRelTime(h.timestamp)}${isBorder ? '<br>🚨 Border alert' : ''}`,
+      { sticky: true }
+    );
+    bounds.push([h.lat, h.lng]);
+  });
+  if (bounds.length) {
+    try { dbMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 12 }); } catch(e) {}
+  }
+  document.getElementById('dbMapSub').textContent = `${sightings.length} GPS sighting${sightings.length!==1?'s':''}`;
+}
+
+function renderTopSources(detected) {
+  const counts = {};
+  detected.forEach(h => { counts[h.source] = (counts[h.source]||0) + 1; });
+  const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  document.getElementById('sourceCount').textContent = `${sorted.length} source${sorted.length!==1?'s':''}`;
+  if (!sorted.length) {
+    document.getElementById('dbSourceList').innerHTML = '<div class="empty-state" style="padding:20px">No data yet.</div>';
+    return;
+  }
+  const max = sorted[0][1];
+  document.getElementById('dbSourceList').innerHTML = sorted.map(([name, cnt], i) => `
+    <div class="source-row">
+      <div class="source-rank">${i+1}</div>
+      <div class="source-name" title="${name}">${name}</div>
+      <div class="source-bar-wrap"><div class="source-bar" style="width:${Math.round(cnt/max*80)}px"></div></div>
+      <div class="source-count">${cnt}</div>
+    </div>`).join('');
+}
+
+function formatRelTime(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000)  return 'Just now';
+  if (diff < 3600000) return `${Math.floor(diff/60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`;
+  return new Date(iso).toLocaleDateString('default',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+
+// ─── STATS ────────────────────────────────────────────────────────────────────
+async function updateStats() {
+  try {
+    const hist = await fetch('/api/history?limit=500').then(r=>r.json());
+    const today = new Date().toDateString();
+    const todayDet = hist.filter(h=>h.detected && new Date(h.timestamp).toDateString()===today);
+    document.getElementById('statAlerts').textContent = todayDet.length;
+    document.getElementById('statChecks').textContent = totalChecks || hist.length;
+    document.getElementById('statGPS').textContent = hist.filter(h=>h.lat).length;
+    const cams = await fetch('/api/cameras').then(r=>r.json());
+    document.getElementById('statCams').textContent = cams.filter(c=>c.enabled).length;
+  } catch{}
+}
+
+// ─── TOAST ────────────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg, error=false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast' + (error?' error':'');
+  void el.offsetWidth;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+initMap();
+switchTab('dashboard');
+connectWS();
+updateStats();
+setInterval(updateStats, 15000);
+setInterval(() => {
+  if (document.getElementById('pane-dashboard').classList.contains('active')) refreshDashboard();
+}, 60000);
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

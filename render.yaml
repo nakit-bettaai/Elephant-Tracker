@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: elephant-tracker
+    runtime: docker
+    plan: free
+    envVars:
+      - key: PORT
+        value: 8001
+      - key: LINE_NOTIFY_TOKEN
+        sync: false
+      - key: BORDER_LINE_TOKEN
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      - key: CONFIDENCE_THRESHOLD
+        value: "0.5"
+      - key: STREAM_INTERVAL
+        value: "5"

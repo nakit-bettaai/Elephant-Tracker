@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+static/images/*.jpg
+static/images/*.jpeg
+static/images/*.png
+!static/images/marker-icon.png
+!static/images/marker-shadow.png
+*.log
+runs/
